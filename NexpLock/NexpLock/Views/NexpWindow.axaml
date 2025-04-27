@@ -1,0 +1,234 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:NexpLock.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="NexpLock.Views.NexpWindow"
+        x:DataType="vm:NexpWindowViewModel"
+        Title="NexpLock"
+        Background="#1E1E1E"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        WindowState="Normal"
+        Topmost="True"
+        MinWidth="600"
+        MinHeight="500"
+        CanResize="False">
+
+    <Design.DataContext>
+        <vm:NexpWindowViewModel />
+    </Design.DataContext>
+
+    <Window.Styles>
+        <Style Selector="Window">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <Style Selector="Button.TitleBarButton">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.TitleBarButton:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.TitleBarButton:pressed">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.CloseButton:pointerover">
+            <Setter Property="Background" Value="#E81123" />
+        </Style>
+        <Style Selector="Button.CloseButton:pointerover TextBlock">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+
+        <Style Selector="Button.ActionButton">
+            <Setter Property="Background" Value="#2D2D2D" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="#4A4A4A" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.ActionButton:pointerover">
+            <Setter Property="Background" Value="#3C3C3C" />
+            <Setter Property="BorderBrush" Value="#5A5A5A" />
+        </Style>
+        <Style Selector="Button.ActionButton:pressed">
+            <Setter Property="Background" Value="#4A4A4A" />
+            <Setter Property="BorderBrush" Value="#6A6A6A" />
+        </Style>
+
+        <Style Selector="ProgressBar">
+            <Setter Property="Foreground" Value="#4A90E2" />
+            <Setter Property="Background" Value="#2D2D2D" />
+            <Setter Property="Height" Value="4" />
+            <Setter Property="CornerRadius" Value="2" />
+        </Style>
+
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#2D2D2D" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="CaretBrush" Value="#E0E0E0" />
+            <Setter Property="BorderBrush" Value="#4A4A4A" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#3C3C3C" />
+            <Setter Property="BorderBrush" Value="#5A5A5A" />
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#3C3C3C" />
+            <Setter Property="BorderBrush" Value="#4A90E2" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBox /template/ TextPresenter#PART_TextPresenter">
+            <Setter Property="TextBlock.Foreground" Value="#E0E0E0" />
+            <Setter Property="TextBlock.FontSize" Value="14" />
+        </Style>
+        <Style Selector="TextBox:empty /template/ TextBlock#PART_Watermark">
+            <Setter Property="Foreground" Value="#A0A0A0" />
+        </Style>
+
+        <Style Selector="TabControl">
+            <Setter Property="Background" Value="#1E1E1E" />
+        </Style>
+        <Style Selector="TabItem">
+            <Setter Property="Background" Value="#1E1E1E" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+        </Style>
+        <Style Selector="TabItem:selected">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+        </Style>
+    </Window.Styles>
+
+    <Panel>
+        <Grid RowDefinitions="Auto,*">
+            <Grid RowDefinitions="Auto,*">
+                <Grid x:Name="TitleBar" Grid.Row="0" Height="32" ColumnDefinitions="Auto,*,Auto"
+                      Background="#2D2D2D"
+                      PointerPressed="OnTitleBarPointerPressed">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,0,0"
+                                VerticalAlignment="Center" IsHitTestVisible="False">
+                        <TextBlock Text="NexpLock" VerticalAlignment="Center" Foreground="#E0E0E0"
+                                   FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                        <Button Classes="TitleBarButton" Width="46" Height="32" CornerRadius="0"
+                                Click="OnMinimizeButtonClick">
+                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" FontSize="10" />
+                        </Button>
+                        <Button Classes="TitleBarButton CloseButton" Width="46" Height="32" CornerRadius="0"
+                                Click="OnCloseButtonClick">
+                            <TextBlock Text="" FontFamily="Segoe MDL2 Assets" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" FontSize="10" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="20" x:Name="ContentGrid">
+                <TabControl Background="#1E1E1E">
+
+                    <TabItem Header="Encrypt/Decrypt" FontWeight="SemiBold">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" Margin="0,10"
+                                  ColumnDefinitions="*,Auto">
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Source File:" Margin="0,0,0,5"
+                                           Foreground="#E0E0E0" />
+
+                                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" x:Name="SourcePathTextBox" IsReadOnly="True"
+                                             Text="{Binding State.SourceFilePath}"
+                                             Watermark="Select a file to encrypt/decrypt" />
+                                    <Button Grid.Column="1" Content="Browse" Margin="5,0,0,0" Classes="ActionButton"
+                                            Click="OnBrowseButtonClick" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Encryption Key:" Margin="0,15,0,5"
+                                           Foreground="#E0E0E0" />
+
+                                <Grid Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+                                      ColumnDefinitions="*,Auto,Auto,Auto">
+                                    <TextBox Grid.Column="0" x:Name="KeyTextBox"
+                                             Text="{Binding State.EncryptionKey}"
+                                             PasswordChar="{Binding KeyTextBoxPasswordChar}"
+                                             Watermark="Enter encryption key or generate a new one" />
+                                    <Button Grid.Column="1" x:Name="GenerateAesKeyButton" Content="Generate"
+                                            Margin="5,0,0,0" Classes="ActionButton"
+                                            Click="OnGenerateKeyButtonClick" />
+                                    <Button Grid.Column="2" x:Name="TogglePasswordButton" Content="Show/Hide"
+                                            Margin="5,0,0,0" Classes="ActionButton"
+                                            Click="OnTogglePasswordButtonClick" />
+                                </Grid>
+
+                                <Grid Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" RowDefinitions="*,Auto,Auto"
+                                      Margin="0,15,0,15">
+                                    <TextBlock Grid.Row="0" x:Name="StatusTextBlock"
+                                               Text="{Binding State.OperationStatus}"
+                                               VerticalAlignment="Center" HorizontalAlignment="Center"
+                                               Foreground="#E0E0E0" />
+
+                                    <ProgressBar Grid.Row="1" x:Name="ProgressBar"
+                                                 Value="{Binding State.ProgressValue}"
+                                                 Maximum="100"
+                                                 IsVisible="{Binding State.IsProgressVisible}"
+                                                 Margin="0,10" />
+
+                                    <TextBlock Grid.Row="2" x:Name="TimeElapsedTextBlock"
+                                               Text=""
+                                               HorizontalAlignment="Center"
+                                               Foreground="#E0E0E0" />
+                                </Grid>
+
+                                <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal"
+                                            HorizontalAlignment="Center" Spacing="10" Margin="0,0,0,10">
+                                    <Button x:Name="EncryptButton" Content="Encrypt" Classes="ActionButton" Width="120"
+                                            IsEnabled="True" Click="OnEncryptButtonClick" />
+                                    <Button x:Name="DecryptButton" Content="Decrypt" Classes="ActionButton" Width="120"
+                                            IsEnabled="True" Click="OnDecryptButtonClick" />
+                                    <Button x:Name="CancelButton" Content="Cancel" Classes="ActionButton" Width="120"
+                                            IsEnabled="True" Click="OnCancelButtonClick" />
+                                </StackPanel>
+                            </Grid>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="Settings" FontWeight="SemiBold">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,10" Spacing="15">
+                                <CheckBox Content="Delete original file after encryption (TODO)" IsChecked="False"
+                                          x:Name="DeleteOriginalCheckBox" Foreground="#E0E0E0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <TabItem Header="About" FontWeight="SemiBold">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="0,10" Spacing="10">
+                                <TextBlock Text="NexpLock" FontSize="20" FontWeight="Bold" Foreground="#E0E0E0" />
+                                <TextBlock Text="Secure file encryption and decryption utility" Foreground="#E0E0E0" />
+                                <TextBlock
+                                    Text="You can encrypt/decrypt your files with an efficient way. It's good for encrypting or decrypting large files."
+                                    Foreground="#E0E0E0" TextWrapping="Wrap" Margin="0,10" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+            </Grid>
+        </Grid>
+    </Panel>
+</Window>
