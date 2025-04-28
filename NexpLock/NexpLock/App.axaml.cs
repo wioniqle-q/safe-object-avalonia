@@ -46,19 +46,13 @@ public sealed class App : Application
 
         var services = new ServiceCollection();
         services.AddLogging();
-
-        var vaultLoggerInstance = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Debug);
-        }).CreateLogger<VaultService>();
-
+        
         var storageLoggerInstance = LoggerFactory.Create(builder =>
         {
             builder.AddConsole();
             builder.SetMinimumLevel(LogLevel.Debug);
         }).CreateLogger<StorageService>();
-        
+
         services.TryAddSingleton<NexpWindow>();
         services.TryAddSingleton<NexpWindowViewModel>();
 

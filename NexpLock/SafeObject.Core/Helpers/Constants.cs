@@ -18,7 +18,18 @@ public static class Constants
             public const int HmacKeySize = 32;
             public const int SaltSize = 32;
             public const int DefaultKeySize = 32;
+            private const int EncryptedKeySize = NonceSize + DefaultKeySize + TagSize;
+            public const int FinalEncryptedKeySize = NonceSize + EncryptedKeySize + TagSize;
             public static readonly ImmutableArray<byte> NonceContext = [.."AES-GCM-NONCE-V1"u8.ToArray()];
+        }
+
+        public static class SystemVault
+        {
+            public const string StoragePath = "lockedbox";
+            public const string SpBin = "sp_80038b.bin";
+
+            public const int SystemSecurityKeySize = 256;
+            public const int Iterations = 600 * 1000;
         }
     }
 

@@ -26,22 +26,33 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-
         cancellationToken.ThrowIfCancellationRequested();
 
-        var key = GenerateRandomKey();
+        var contentKey = GenerateRandomKey();
+        var finalEncryptedKey = await _keyVaultService.EncryptKeyAsync(contentKey, filePublicMasterKey);
         var nonce = SecurePool.Rent(Constants.Security.KeyVault.NonceSize);
 
         try
         {
-            RandomNumberGenerator.Fill(nonce);
+            RandomNumberGenerator.Fill(nonce.AsSpan(0, Constants.Security.KeyVault.NonceSize));
 
-            await _keyVaultService.StoreKeyAsync(request.FileId, Convert.ToBase64String(key), filePublicMasterKey);
-            await ProcessEncryptionStreamAsync(request, key, nonce, cancellationToken);
+            await using var sourceStream =
+                CreateFileStream(request.SourcePath, FileMode.Open, FileAccess.Read, _logger);
+            await using var destinationStream =
+                CreateFileStream(request.DestinationPath, FileMode.Create, FileAccess.Write, _logger);
+
+            await destinationStream.WriteAsync(
+                finalEncryptedKey.AsMemory(0, Constants.Security.KeyVault.FinalEncryptedKeySize), cancellationToken);
+            await destinationStream.WriteAsync(nonce.AsMemory(0, Constants.Security.KeyVault.NonceSize),
+                cancellationToken);
+            await destinationStream.FlushAsync(cancellationToken);
+
+            await ProcessEncryptionStreamAsync(sourceStream, destinationStream, contentKey, nonce, cancellationToken);
         }
         finally
         {
-            SecurePool.Return(nonce);
+            SecurePool.Return(nonce, true);
+            CryptographicOperations.ZeroMemory(contentKey);
         }
     }
 
@@ -49,23 +60,43 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-
         cancellationToken.ThrowIfCancellationRequested();
 
-        var filePrivateKey = await _keyVaultService.RetrieveKeyAsync(request.FileId, filePublicMasterKey);
-        var key = Convert.FromBase64String(filePrivateKey);
+        await using var sourceStream = CreateFileStream(request.SourcePath, FileMode.Open, FileAccess.Read, _logger);
+        await using var destinationStream =
+            CreateFileStream(request.DestinationPath, FileMode.Create, FileAccess.Write, _logger);
+
+        var finalEncryptedKey = SecurePool.Rent(Constants.Security.KeyVault.FinalEncryptedKeySize);
+        var nonce = SecurePool.Rent(Constants.Security.KeyVault.NonceSize);
 
         try
         {
-            await using var sourceStream = CreateFileStream(request.SourcePath, FileMode.Open, FileAccess.Read, logger);
-            await using var destinationStream =
-                CreateFileStream(request.DestinationPath, FileMode.Create, FileAccess.Write, logger);
+            await sourceStream.ReadExactlyAsync(
+                finalEncryptedKey.AsMemory(0, Constants.Security.KeyVault.FinalEncryptedKeySize), cancellationToken);
+            await sourceStream.ReadExactlyAsync(nonce.AsMemory(0, Constants.Security.KeyVault.NonceSize),
+                cancellationToken);
 
-            await ProcessDecryptionAsync(key, sourceStream, destinationStream, cancellationToken);
+            var contentKey = await _keyVaultService.DecryptKeyAsync(
+                finalEncryptedKey.AsSpan(0, Constants.Security.KeyVault.FinalEncryptedKeySize).ToArray(),
+                filePublicMasterKey);
+
+            try
+            {
+                await ProcessDecryptionStreamAsync(sourceStream, destinationStream, contentKey,
+                    nonce.AsSpan(0, Constants.Security.KeyVault.NonceSize).ToArray(), cancellationToken);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(contentKey);
+            }
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(finalEncryptedKey.AsSpan(0,
+                Constants.Security.KeyVault.FinalEncryptedKeySize));
+            CryptographicOperations.ZeroMemory(nonce.AsSpan(0, Constants.Security.KeyVault.NonceSize));
+            SecurePool.Return(finalEncryptedKey, true);
+            SecurePool.Return(nonce, true);
         }
     }
 
@@ -132,27 +163,6 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static async Task ProcessDecryptionAsync(byte[] key, Stream sourceStream, Stream destinationStream,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var nonce = SecurePool.Rent(Constants.Security.KeyVault.NonceSize);
-        try
-        {
-            await sourceStream.ReadExactlyAsync(nonce.AsMemory(0, Constants.Security.KeyVault.NonceSize),
-                cancellationToken);
-
-            using var aesGcm = new AesGcm(key, Constants.Security.KeyVault.TagSize);
-            await ProcessDecryptionStreamAsync(sourceStream, destinationStream, aesGcm, nonce, cancellationToken);
-        }
-        finally
-        {
-            SecurePool.Return(nonce, true);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void DeriveNonce(byte[] salt, long blockIndex, byte[] outputNonce)
     {
         var hashProvider = HashAlgorithmProviderFactory.Instance;
@@ -166,12 +176,9 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
         try
         {
             BitConverter.TryWriteBytes(blockIndexBytes, blockIndex);
-
             using (var hmac = hashProvider.CreateHmac(salt))
             {
-                hmac.TryComputeHash(blockIndexBytes, prk, out var bytesWritten);
-                if (bytesWritten != hmacKeySize)
-                    throw new CryptographicException("HMAC computation failed.");
+                hmac.TryComputeHash(blockIndexBytes, prk, out _);
             }
 
             blockIndexBytes.CopyTo(info);
@@ -179,10 +186,6 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
 
             HKDF.Expand(hashProvider.GetHashAlgorithmName(), prk, okm, info);
             okm.CopyTo(outputNonce.AsSpan(0, Constants.Security.KeyVault.NonceSize));
-        }
-        catch (Exception)
-        {
-            throw new CryptographicException("Failed to derive nonce.");
         }
         finally
         {
@@ -197,18 +200,22 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
     private static void PrecomputeSalt(byte[] originalNonce, byte[] salt)
     {
         var hashProvider = HashAlgorithmProviderFactory.Instance;
+
         var saltSize = hashProvider.GetSaltSize();
+        if (salt.Length != saltSize)
+            throw new ArgumentException($"Salt buffer size must be {saltSize} bytes.", nameof(salt));
 
         Span<byte> input = stackalloc byte[8];
-
+        
         try
         {
             BitConverter.TryWriteBytes(input, 0L);
 
-            using var hmac = hashProvider.CreateHmac(originalNonce);
-            if (!hmac.TryComputeHash(input, salt, out var bytesWritten) ||
-                bytesWritten != saltSize)
-                throw new CryptographicException("Failed to derive salt.");
+            using var hmac =
+                hashProvider.CreateHmac(originalNonce.AsSpan(0, Constants.Security.KeyVault.NonceSize).ToArray());
+            if (!hmac.TryComputeHash(input, salt, out var bytesWritten) || bytesWritten != saltSize)
+                throw new CryptographicException(
+                    $"Failed to derive salt: Expected {saltSize} bytes, got {bytesWritten}");
         }
         finally
         {
@@ -217,14 +224,9 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private async ValueTask ProcessEncryptionStreamAsync(FileProcessingRequest request, byte[] key, byte[] nonce,
-        CancellationToken cancellationToken)
+    private static async Task ProcessEncryptionStreamAsync(Stream sourceStream, Stream destinationStream, byte[] key,
+        byte[] nonce, CancellationToken cancellationToken)
     {
-        await using var sourceStream = CreateFileStream(
-            request.SourcePath, FileMode.Open, FileAccess.Read, _logger);
-        await using var destinationStream = CreateFileStream(
-            request.DestinationPath, FileMode.Create, FileAccess.Write, _logger);
-
         using var aesGcm = new AesGcm(key, Constants.Security.KeyVault.TagSize);
 
         var saltSize = HashAlgorithmProviderFactory.Instance.GetSaltSize();
@@ -239,13 +241,8 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
         {
             PrecomputeSalt(nonce, salt);
 
-            await destinationStream.WriteAsync(nonce.AsMemory(0, Constants.Security.KeyVault.NonceSize),
-                cancellationToken);
-            await destinationStream.FlushAsync(cancellationToken);
-
-            var totalBlocks = (long)Math.Ceiling((double)sourceStream.Length / Constants.Storage.BufferSize);
-
-            for (long blockIndex = 0; blockIndex < totalBlocks; blockIndex++)
+            long blockIndex = 0;
+            while (true)
             {
                 var bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, Constants.Storage.BufferSize),
                     cancellationToken);
@@ -263,6 +260,8 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
                     cancellationToken);
                 await destinationStream.WriteAsync(ciphertext.AsMemory(0, bytesRead), cancellationToken);
                 await destinationStream.FlushAsync(cancellationToken);
+
+                blockIndex++;
             }
         }
         finally
@@ -276,13 +275,11 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static async Task ProcessDecryptionStreamAsync(
-        Stream sourceStream,
-        Stream destinationStream,
-        AesGcm aesGcm,
-        byte[] nonce,
-        CancellationToken cancellationToken)
+    private static async Task ProcessDecryptionStreamAsync(Stream sourceStream, Stream destinationStream, byte[] key,
+        byte[] nonce, CancellationToken cancellationToken)
     {
+        using var aesGcm = new AesGcm(key, Constants.Security.KeyVault.TagSize);
+
         var saltSize = HashAlgorithmProviderFactory.Instance.GetSaltSize();
 
         var tag = SecurePool.Rent(Constants.Security.KeyVault.TagSize);
@@ -295,14 +292,12 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
         {
             PrecomputeSalt(nonce, salt);
 
-            var totalBlocks = (long)Math.Ceiling((double)(sourceStream.Length - Constants.Security.KeyVault.NonceSize) /
-                                                 (Constants.Security.KeyVault.TagSize + Constants.Storage.BufferSize));
-
-            for (long blockIndex = 0; blockIndex < totalBlocks; blockIndex++)
+            long blockIndex = 0;
+            while (sourceStream.Position < sourceStream.Length)
             {
                 var tagRead = await sourceStream.ReadAsync(tag.AsMemory(0, Constants.Security.KeyVault.TagSize),
                     cancellationToken);
-                if (tagRead is 0)
+                if (tagRead < Constants.Security.KeyVault.TagSize)
                     break;
 
                 var bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, Constants.Storage.BufferSize),
@@ -320,6 +315,8 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
 
                 await destinationStream.WriteAsync(plaintext.AsMemory(0, bytesRead), cancellationToken);
                 await destinationStream.FlushAsync(cancellationToken);
+
+                blockIndex++;
             }
         }
         finally
@@ -329,7 +326,6 @@ public sealed class StorageService(ILogger<StorageService>? logger, IVaultServic
             SecurePool.Return(plaintext, true);
             SecurePool.Return(chunkNonce, true);
             SecurePool.Return(salt, true);
-            SecurePool.Return(nonce, true);
         }
     }
-} 
+}
